@@ -1,0 +1,12 @@
+{
+  "appId": "com.dailyai.assistant",
+  "appName": "Daily AI Assistant",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

@@ -1,0 +1,53 @@
+# Environment
+.env
+.env.local
+.env.example
+frontend/.env.local
+frontend/.env.android
+frontend/.env.android.local
+
+# Java
+backend/target/
+*.log
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/android/.gradle/
+frontend/android/app/build/
+frontend/android/build/
+frontend/android/local.properties
+
+# Editors and OS
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local Android SDK / downloads
+.tools/android-sdk/
+.tools/downloads/
+
+# Local development tools
+.tools/
+.vscode/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+!.env.android.example
+
+# Dependencies and builds
+node_modules/
+dist/
+target/
+build/
+.gradle/
+
+# Android local configuration
+local.properties
+
+# OS files
+.DS_Store
+Thumbs.db
