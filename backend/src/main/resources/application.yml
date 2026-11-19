@@ -30,7 +30,11 @@ spring:
       enabled: true
 
 server:
-  port: ${SERVER_PORT:8080}
+  # Render injects PORT (default 10000); SERVER_PORT and 8080 keep local dev unchanged.
+  port: ${PORT:${SERVER_PORT:8080}}
+  # Render terminates TLS and forwards X-Forwarded-*; framework mode makes the
+  # request scheme, host and client address reflect the original request.
+  forward-headers-strategy: framework
   shutdown: graceful
   servlet:
     session:

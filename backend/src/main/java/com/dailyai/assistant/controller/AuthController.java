@@ -13,6 +13,7 @@ import com.dailyai.assistant.service.CurrentUserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -36,6 +37,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Map;
 
 @RestController
@@ -49,6 +51,8 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final LoginAttemptService loginAttemptService;
     private final SessionAuthenticationStrategy sessionAuthenticationStrategy;
+    private final boolean sessionCookieSecure;
+    private final String sessionCookieSameSite;
     private final SecurityContextRepository securityContextRepository =
             new HttpSessionSecurityContextRepository();
 
@@ -56,12 +60,16 @@ public class AuthController {
                           CurrentUserService currentUserService,
                           AuthenticationManager authenticationManager,
                           LoginAttemptService loginAttemptService,
-                          SessionAuthenticationStrategy sessionAuthenticationStrategy) {
+                          SessionAuthenticationStrategy sessionAuthenticationStrategy,
+                          @Value("${server.servlet.session.cookie.secure:false}") boolean sessionCookieSecure,
+                          @Value("${server.servlet.session.cookie.same-site:lax}") String sessionCookieSameSite) {
         this.authService = authService;
         this.currentUserService = currentUserService;
         this.authenticationManager = authenticationManager;
         this.loginAttemptService = loginAttemptService;
         this.sessionAuthenticationStrategy = sessionAuthenticationStrategy;
+        this.sessionCookieSecure = sessionCookieSecure;
+        this.sessionCookieSameSite = sessionCookieSameSite;
     }
 
     @GetMapping("/csrf")
@@ -112,14 +120,39 @@ public class AuthController {
     public ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         new SecurityContextLogoutHandler().logout(request, response, authentication);
-        ResponseCookie expired = ResponseCookie.from(SESSION_COOKIE, "")
-                .path("/")
-                .httpOnly(true)
-                .maxAge(Duration.ZERO)
-                .build();
+        ResponseCookie expired = expiredSessionCookie(sessionCookieSecure, sessionCookieSameSite);
         return ResponseEntity.noContent()
                 .header(HttpHeaders.SET_COOKIE, expired.toString())
                 .build();
+    }
+
+    /**
+     * Expires the session cookie with the same attributes used to create it
+     * (server.servlet.session.cookie.*), so every browser drops the session.
+     */
+    static ResponseCookie expiredSessionCookie(boolean secure, String sameSite) {
+        ResponseCookie.ResponseCookieBuilder cookie = ResponseCookie.from(SESSION_COOKIE, "")
+                .path("/")
+                .httpOnly(true)
+                .secure(secure)
+                .maxAge(Duration.ZERO);
+        String normalized = normalizeSameSite(sameSite);
+        if (normalized != null) {
+            cookie.sameSite(normalized);
+        }
+        return cookie.build();
+    }
+
+    /** Canonicalises SameSite so the logout cookie mirrors the session cookie. */
+    static String normalizeSameSite(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return switch (value.trim().toLowerCase(Locale.ROOT)) {
+            case "strict" -> "Strict";
+            case "none" -> "None";
+            default -> "Lax";
+        };
     }
 
     @GetMapping("/me")

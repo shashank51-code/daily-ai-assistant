@@ -148,7 +148,12 @@ class AuthApiIntegrationTest {
                         .session(session)
                         .header("X-XSRF-TOKEN", logoutCsrf.token()))
                 .andExpect(status().isNoContent())
-                .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
+                .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString("DAILYAI_SESSION="),
+                        org.hamcrest.Matchers.containsString("Max-Age=0"),
+                        org.hamcrest.Matchers.containsString("Path=/"),
+                        org.hamcrest.Matchers.containsString("HttpOnly"),
+                        org.hamcrest.Matchers.containsString("SameSite=Lax"))));
 
         mockMvc.perform(get("/api/auth/me")).andExpect(status().isUnauthorized());
 

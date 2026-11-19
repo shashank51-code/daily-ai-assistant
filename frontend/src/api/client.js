@@ -1,11 +1,15 @@
 import axios from 'axios';
+import { resolveApiBaseUrl } from './baseUrl';
 
 /**
- * In development Vite proxies /api to http://localhost:8080.
- * In a packaged Android build the app has no proxy, so VITE_API_BASE_URL must be
- * provided at build time (for example http://10.0.2.2:8080 or a public URL).
+ * Requests use relative /api paths by default.
+ * - Development: Vite proxies /api to http://localhost:8080 (vite.config.js).
+ * - Production: frontend/vercel.json rewrites /api/* to the Render service, so
+ *   the browser stays same-origin and the session cookie stays first-party.
+ * A packaged Android build has no proxy, so VITE_API_BASE_URL must be provided
+ * at build time (for example http://10.0.2.2:8080 or a public HTTPS URL).
  */
-const baseURL = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? '' : 'http://localhost:8080');
+const baseURL = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 
 const client = axios.create({
   baseURL,
