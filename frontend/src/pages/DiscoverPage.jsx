@@ -12,8 +12,10 @@ import ArticleCard from '../components/ArticleCard.jsx';
 import ToolCard from '../components/ToolCard.jsx';
 import { EmptyState, ErrorState, SkeletonList } from '../components/States.jsx';
 import { RefreshIcon, SearchIcon } from '../components/Icons.jsx';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 export default function DiscoverPage() {
+  const { user } = useAuth();
   const [tab, setTab] = useState('news');
   const [queryInput, setQueryInput] = useState('');
   const [query, setQuery] = useState('');
@@ -68,8 +70,8 @@ export default function DiscoverPage() {
       categories.reload();
     } catch (error) {
       setRefreshError(
-        error?.response?.status === 401
-          ? 'Refresh requires an admin key. Set the X-Admin-Key header on the server or refresh from the scheduler.'
+        error?.response?.status === 403
+          ? 'Admin access is required to refresh feeds. Use the scheduler or an admin account.'
           : 'Could not refresh the news feeds right now.'
       );
     } finally {
@@ -81,9 +83,11 @@ export default function DiscoverPage() {
     <div className="stack">
       <div className="page-title">
         <h1>Discover</h1>
-        <button type="button" className="icon-button" onClick={handleRefresh} disabled={refreshing} title="Fetch feeds now" aria-label="Refresh news feeds">
-          <RefreshIcon className={refreshing ? 'spin' : ''} />
-        </button>
+        {user?.role === 'ADMIN' && (
+          <button type="button" className="icon-button" onClick={handleRefresh} disabled={refreshing} title="Fetch feeds now" aria-label="Refresh news feeds">
+            <RefreshIcon className={refreshing ? 'spin' : ''} />
+          </button>
+        )}
       </div>
 
       {refreshMessage && <p className="notice success">{refreshMessage}</p>}

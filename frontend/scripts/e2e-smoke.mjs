@@ -40,7 +40,10 @@ const context = await browser.newContext({ viewport: { width: 390, height: 844 }
 const page = await context.newPage();
 page.on('console', (message) => {
   const url = message.location()?.url || '';
-  if (message.type() === 'error' && !url.includes('favicon') && !message.text().includes('favicon')) {
+  const expectedAuthProbe = message.text().includes('status of 401')
+    && (url.includes('/api/auth/me') || url.includes('/api/auth/login'));
+  if (message.type() === 'error' && !url.includes('favicon')
+      && !message.text().includes('favicon') && !expectedAuthProbe) {
     consoleErrors.push(`${message.text()} @ ${url}`);
   }
 });
@@ -48,6 +51,27 @@ page.on('pageerror', (error) => pageErrors.push(String(error)));
 
 try {
   await page.goto(`${BASE}/#/`, { waitUntil: 'networkidle' });
+
+  await check('authentication bootstrap for regression run', async () => {
+    if (!page.url().includes('#/login')) return;
+    const email = process.env.E2E_EMAIL || `regression.${Date.now()}@example.com`;
+    const password = process.env.E2E_PASSWORD || 'StrongPass1!';
+    if (process.env.E2E_EMAIL) {
+      await page.locator('input[type="email"]').fill(email);
+      await page.locator('input[autocomplete="current-password"]').fill(password);
+      await page.getByRole('button', { name: 'Sign in' }).click();
+    } else {
+      await page.getByRole('link', { name: 'Create an account' }).click();
+      await page.locator('input[autocomplete="name"]').fill('E2E Regression');
+      await page.locator('input[type="email"]').fill(email);
+      const passwords = page.locator('input[autocomplete="new-password"]');
+      await passwords.nth(0).fill(password);
+      await passwords.nth(1).fill(password);
+      await page.getByRole('button', { name: 'Create account' }).click();
+    }
+    await page.waitForURL('**/#/', { timeout: 15000 });
+    await page.locator('.bottom-nav .nav-item').first().waitFor();
+  });
 
   await check('bottom navigation has five tabs', async () => {
     const count = await page.locator('.bottom-nav .nav-item').count();
@@ -179,8 +203,44 @@ try {
     await page.locator('.article-card').first().waitFor();
     await page.locator('.article-card .read-more').first().click();
     await page.getByText('Beginner-friendly explanation', { exact: true }).waitFor();
-    await page.getByText('What happened?', { exact: true }).waitFor();
+    await page.getByText('Quick summary', { exact: true }).waitFor();
     await page.getByText('Related technologies', { exact: true }).waitFor();
+  });
+
+  await check('claim provenance labels render for new AI claims', async () => {
+    const mockedArticle = {
+      id: 999999,
+      title: 'Grounded claim rendering fixture',
+      source: 'Test source',
+      publishedAt: '2026-11-19T00:00:00Z',
+      categoryName: 'AI Research',
+      description: 'Abstract: We study this in 56 interactive worlds.',
+      url: 'https://example.com/fixture',
+      bookmarked: false,
+      explanation: {
+        generatedBy: 'AI',
+        whatHappened: 'The fixture checks claim provenance.',
+        claims: [
+          { section: 'howItWorks', kind: 'SOURCE_FACT', statement: 'The study uses 56 worlds.', evidence: 'We study this in 56 interactive worlds.' },
+          { section: 'importance', kind: 'INTERPRETATION', statement: 'The result may matter.', evidence: 'We study this in 56 interactive worlds.' },
+        ],
+      },
+    };
+    await page.route('**/api/news/999999', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(mockedArticle),
+    }));
+    try {
+      await page.goto(`${BASE}/#/news/999999`, { waitUntil: 'networkidle' });
+      await page.getByText('Source-grounded claims', { exact: true }).waitFor();
+      const kinds = await page.locator('.claim-kind').allTextContents();
+      assert(kinds.includes('Source fact') && kinds.includes('App interpretation'),
+        `missing provenance labels: ${kinds.join(', ')}`);
+      await page.getByText('Relates to: How does it work?', { exact: true }).waitFor();
+    } finally {
+      await page.unroute('**/api/news/999999');
+    }
   });
 
   await check('profile name can be saved and restored', async () => {
@@ -188,11 +248,11 @@ try {
     await page.getByText('Reading history', { exact: true }).waitFor();
     const input = page.locator('.inline-form input');
     await input.fill('E2E Tester');
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
     await page.getByText('Profile updated.', { exact: true }).waitFor();
     await page.getByText('E2E Tester', { exact: true }).waitFor();
     await input.fill('Fresher');
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
     await page.getByText('Fresher', { exact: true }).waitFor();
     const name = await textOf(page, '.profile-card h2');
     assert(name === 'Fresher', `name was not restored: ${name}`);

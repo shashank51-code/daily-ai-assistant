@@ -1,53 +1,50 @@
-# Environment
-.env
-.env.local
-.env.example
-frontend/.env.local
-frontend/.env.android
-frontend/.env.android.local
-
-# Java
-backend/target/
-*.log
-
-# Node
-frontend/node_modules/
-frontend/dist/
-frontend/android/.gradle/
-frontend/android/app/build/
-frontend/android/build/
-frontend/android/local.properties
-
-# Editors and OS
-.idea/
-*.iml
-.DS_Store
-Thumbs.db
-
-# Local Android SDK / downloads
-.tools/android-sdk/
-.tools/downloads/
-
-# Local development tools
-.tools/
-.vscode/
-
-# Environment secrets
+# --- Environment files and secrets -------------------------------------------
+# Local environment files are never committed. Examples stay tracked.
 .env
 .env.*
 !.env.example
 !.env.android.example
+*.jks
+*.keystore
+*.p12
+*.pfx
 
-# Dependencies and builds
+# Local backups and editor leftovers
+*.bak
+*.orig
+*.rej
+*.swp
+*.swo
+*.tmp
+*~
+
+# --- Java / Maven ------------------------------------------------------------
+backend/target/
+*.class
+*.log
+
+# --- Node / frontend ---------------------------------------------------------
 node_modules/
-dist/
-target/
-build/
-.gradle/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+yarn-error.log*
 
-# Android local configuration
-local.properties
+# --- Android / Gradle --------------------------------------------------------
+frontend/android/.gradle/
+frontend/android/build/
+frontend/android/app/build/
+frontend/android/local.properties
 
-# OS files
+# --- Local Android toolchain downloads --------------------------------------
+.tools/
+
+# --- Editors and OS ----------------------------------------------------------
+.idea/
+*.iml
+.vscode/
 .DS_Store
 Thumbs.db
+
+# --- Local agent state -------------------------------------------------------
+.freebuff/

@@ -22,6 +22,15 @@ export default function ArticleCard({ article, compact = false, showDescription 
         )}
       </Link>
 
+      {article.usefulness && (
+        <div className="usefulness-preview">
+          <span className={`badge recommendation ${article.usefulness.recommendation.toLowerCase()}`}>
+            {recommendationLabel(article.usefulness.recommendation)}
+          </span>
+          <span className="muted small">{article.usefulness.recommendationReason}</span>
+        </div>
+      )}
+
       <div className="card-meta">
         <span>{article.source || hostOf(article.url)}</span>
         <span aria-hidden="true">·</span>
@@ -32,4 +41,8 @@ export default function ArticleCard({ article, compact = false, showDescription 
       </div>
     </article>
   );
+}
+
+function recommendationLabel(value) {
+  return ({ LEARN_NOW: 'Learn now', EXPLORE_LATER: 'Explore later', SKIP: 'Skip' })[value] || 'Explore later';
 }

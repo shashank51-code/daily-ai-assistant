@@ -1,45 +1,68 @@
 package com.dailyai.assistant.controller;
 
 import com.dailyai.assistant.config.AppProperties;
-import com.dailyai.assistant.exception.GlobalExceptionHandler;
-import com.dailyai.assistant.service.AdminService;
-import org.junit.jupiter.api.BeforeEach;
+import com.dailyai.assistant.security.AdminKeyAuthenticationFilter;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.mock.web.MockFilterChain;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.assertj.core.api.Assertions.assertThat;
 
-@ExtendWith(MockitoExtension.class)
 class AdminControllerTest {
 
-    @Mock
-    private AdminService adminService;
+    @AfterEach
+    void clearContext() {
+        SecurityContextHolder.clearContext();
+    }
 
-    private MockMvc mockMvc;
-
-    @BeforeEach
-    void setUp() {
+    @Test
+    void validAdminKeyGrantsAdminRole() throws Exception {
         AppProperties properties = new AppProperties();
         properties.setAdminApiKey("secret-key");
-        mockMvc = MockMvcBuilders.standaloneSetup(new AdminController(adminService, properties))
-                .setControllerAdvice(new GlobalExceptionHandler())
-                .build();
+        AdminKeyAuthenticationFilter filter = new AdminKeyAuthenticationFilter(properties);
+
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/admin/news/refresh");
+        request.addHeader(AdminKeyAuthenticationFilter.HEADER, "secret-key");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(authentication).isNotNull();
+        assertThat(authentication.getAuthorities())
+                .extracting("authority")
+                .containsExactly("ROLE_ADMIN");
     }
 
     @Test
-    void refreshWithoutKeyIsUnauthorized() throws Exception {
-        mockMvc.perform(post("/api/admin/news/refresh"))
-                .andExpect(status().isUnauthorized());
+    void wrongOrMissingKeyDoesNotAuthenticate() throws Exception {
+        AppProperties properties = new AppProperties();
+        properties.setAdminApiKey("secret-key");
+        AdminKeyAuthenticationFilter filter = new AdminKeyAuthenticationFilter(properties);
+
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/admin/news/refresh");
+        request.addHeader(AdminKeyAuthenticationFilter.HEADER, "nope");
+
+        filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     @Test
-    void refreshWithWrongKeyIsUnauthorized() throws Exception {
-        mockMvc.perform(post("/api/admin/news/refresh").header("X-Admin-Key", "nope"))
-                .andExpect(status().isUnauthorized());
+    void blankConfiguredKeyIsNeverAccepted() throws Exception {
+        AppProperties properties = new AppProperties();
+        properties.setAdminApiKey("");
+        AdminKeyAuthenticationFilter filter = new AdminKeyAuthenticationFilter(properties);
+
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/admin/news/refresh");
+        request.addHeader(AdminKeyAuthenticationFilter.HEADER, "");
+
+        filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 }

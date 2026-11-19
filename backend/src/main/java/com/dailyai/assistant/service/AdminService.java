@@ -17,15 +17,18 @@ public class AdminService {
     private final NewsIngestionService ingestionService;
     private final ArticleService articleService;
     private final ExplanationService explanationService;
+    private final ArticleAiGenerationGuard aiGenerationGuard;
     private final AppProperties properties;
 
     public AdminService(NewsIngestionService ingestionService,
                         ArticleService articleService,
                         ExplanationService explanationService,
+                        ArticleAiGenerationGuard aiGenerationGuard,
                         AppProperties properties) {
         this.ingestionService = ingestionService;
         this.articleService = articleService;
         this.explanationService = explanationService;
+        this.aiGenerationGuard = aiGenerationGuard;
         this.properties = properties;
     }
 
@@ -39,7 +42,8 @@ public class AdminService {
                     "AI explanations are disabled. Set AI_ENABLED=true and AI_API_KEY to use this endpoint.");
         }
         Article article = articleService.requireArticle(articleId);
-        ArticleExplanation explanation = explanationService.regenerateWithAi(article);
+        ArticleExplanation explanation = aiGenerationGuard.run(articleId,
+                () -> explanationService.regenerateWithAi(article));
         return ExplanationDto.from(explanation);
     }
 

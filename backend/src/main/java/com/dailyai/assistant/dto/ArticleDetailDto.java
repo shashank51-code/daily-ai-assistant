@@ -17,9 +17,12 @@ public record ArticleDetailDto(
         String categoryName,
         String imageUrl,
         boolean bookmarked,
-        ExplanationDto explanation
+        ExplanationDto explanation,
+        ArticleUsefulnessDto usefulness,
+        ArticleResearchSummaryDto researchSummary
 ) {
-    public static ArticleDetailDto from(Article article, ArticleExplanation explanation, boolean bookmarked) {
+    public static ArticleDetailDto from(Article article, ArticleExplanation explanation, boolean bookmarked,
+                                        ArticleUsefulnessDto usefulness, ArticleResearchSummaryDto researchSummary) {
         return new ArticleDetailDto(
                 article.getId(),
                 article.getTitle(),
@@ -32,7 +35,9 @@ public record ArticleDetailDto(
                 article.getCategory() == null ? null : article.getCategory().getName(),
                 article.getImageUrl(),
                 bookmarked,
-                ExplanationDto.from(explanation)
+                ExplanationDto.from(explanation),
+                usefulness,
+                researchSummary
         );
     }
 }

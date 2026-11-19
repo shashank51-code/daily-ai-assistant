@@ -42,7 +42,10 @@ public class BookmarkService {
 
     @Transactional(readOnly = true)
     public List<BookmarkDto> list(Bookmark.ItemType itemType) {
-        Long userId = currentUserService.getCurrentUserId();
+        Long userId = currentUserService.getCurrentUserIdOrNull();
+        if (userId == null) {
+            return List.of();
+        }
         List<Bookmark> bookmarks = itemType == null
                 ? bookmarkRepository.findByUserIdOrderByCreatedAtDesc(userId)
                 : bookmarkRepository.findByUserIdAndItemTypeOrderByCreatedAtDesc(userId, itemType);
@@ -84,7 +87,10 @@ public class BookmarkService {
 
     @Transactional(readOnly = true)
     public Set<Long> bookmarkedIds(Bookmark.ItemType itemType) {
-        Long userId = currentUserService.getCurrentUserId();
+        Long userId = currentUserService.getCurrentUserIdOrNull();
+        if (userId == null) {
+            return Set.of();
+        }
         List<Bookmark> bookmarks = bookmarkRepository.findByUserIdAndItemTypeOrderByCreatedAtDesc(userId, itemType);
         Set<Long> ids = new HashSet<>();
         bookmarks.forEach(bookmark -> ids.add(bookmark.getItemId()));
@@ -93,14 +99,15 @@ public class BookmarkService {
 
     @Transactional(readOnly = true)
     public boolean isBookmarked(Bookmark.ItemType itemType, Long itemId) {
-        return bookmarkRepository.existsByUserIdAndItemTypeAndItemId(
-                currentUserService.getCurrentUserId(), itemType, itemId);
+        Long userId = currentUserService.getCurrentUserIdOrNull();
+        return userId != null && bookmarkRepository.existsByUserIdAndItemTypeAndItemId(
+                userId, itemType, itemId);
     }
 
     @Transactional(readOnly = true)
     public long count() {
-        Long userId = currentUserService.getCurrentUserId();
-        return bookmarkRepository.findByUserIdOrderByCreatedAtDesc(userId).size();
+        Long userId = currentUserService.getCurrentUserIdOrNull();
+        return userId == null ? 0 : bookmarkRepository.countByUserId(userId);
     }
 
     private void ensureItemExists(Bookmark.ItemType itemType, Long itemId) {

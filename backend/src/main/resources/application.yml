@@ -32,6 +32,16 @@ spring:
 server:
   port: ${SERVER_PORT:8080}
   shutdown: graceful
+  servlet:
+    session:
+      timeout: ${SESSION_TIMEOUT:8h}
+      cookie:
+        name: DAILYAI_SESSION
+        http-only: true
+        # Set AUTH_COOKIE_SECURE=true and AUTH_COOKIE_SAME_SITE=none behind HTTPS
+        # for a cross-site Capacitor/Android deployment.
+        secure: ${AUTH_COOKIE_SECURE:false}
+        same-site: ${AUTH_COOKIE_SAME_SITE:lax}
 
 management:
   endpoints:
@@ -52,6 +62,15 @@ logging:
 app:
   timezone: Asia/Kolkata
   admin-api-key: ${ADMIN_API_KEY:}
+  scheduler-api-key: ${SCHEDULER_API_KEY:}
+  auth:
+    # Environment-only activation of the pre-authentication profile. Both values
+    # must be set for the bootstrap to run; nothing is created or logged.
+    bootstrap-email: ${BOOTSTRAP_EMAIL:}
+    bootstrap-password: ${BOOTSTRAP_PASSWORD:}
+    bootstrap-role: ${BOOTSTRAP_ROLE:USER}
+    max-login-attempts: ${MAX_LOGIN_ATTEMPTS:5}
+    login-window-minutes: ${LOGIN_WINDOW_MINUTES:15}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173,http://localhost:3000,http://localhost,capacitor://localhost,https://localhost}
   rss:
@@ -75,15 +94,17 @@ app:
         category: ai-tools
       - name: TechCrunch AI
         url: https://techcrunch.com/category/artificial-intelligence/feed/
-        category: ai-startups
+        category: latest-ai-news
       - name: arXiv cs.AI
-        url: https://export.arxiv.org/rss/cs.AI
+        url: https://rss.arxiv.org/rss/cs.AI
         category: ai-research
   ai:
     enabled: ${AI_ENABLED:false}
-    base-url: ${AI_BASE_URL:https://api.openai.com/v1}
+    # Provider name is for telemetry only; the endpoint stays OpenAI-compatible.
+    provider: ${AI_PROVIDER:groq}
+    base-url: ${AI_BASE_URL:https://api.groq.com/openai/v1}
     api-key: ${AI_API_KEY:}
-    model: ${AI_MODEL:gpt-4o-mini}
+    model: ${AI_MODEL:openai/gpt-oss-20b}
     timeout-ms: ${AI_TIMEOUT_MS:30000}
     # Transient failures (429/5xx/timeouts) are retried with bounded exponential backoff.
     max-attempts: ${AI_MAX_ATTEMPTS:2}
@@ -92,3 +113,7 @@ app:
     # so article pages keep loading instantly while the provider is down.
     failure-threshold: ${AI_FAILURE_THRESHOLD:2}
     cooldown-ms: ${AI_COOLDOWN_MS:300000}
+    # Hard cap on provider requests per local day. 0 disables the cap.
+    max-calls-per-day: ${AI_MAX_CALLS_PER_DAY:100}
+    # Do not retry an article whose AI attempt already failed inside this window.
+    retry-after-minutes: ${AI_RETRY_AFTER_MINUTES:360}

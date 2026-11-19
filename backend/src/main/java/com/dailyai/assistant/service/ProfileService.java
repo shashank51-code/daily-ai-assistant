@@ -2,6 +2,7 @@ package com.dailyai.assistant.service;
 
 import com.dailyai.assistant.dto.HistoryDto;
 import com.dailyai.assistant.dto.ProfileDto;
+import com.dailyai.assistant.dto.ProfilePreferencesRequest;
 import com.dailyai.assistant.dto.RoadmapDto;
 import com.dailyai.assistant.entity.User;
 import com.dailyai.assistant.repository.ReadingHistoryRepository;
@@ -44,13 +45,26 @@ public class ProfileService {
                 roadmap.completedTopics(),
                 roadmap.totalTopics(),
                 learningService.planProgressPercent(),
-                history
+                history,
+                user.getPreferences().isBlank() ? List.of() : List.of(user.getPreferences().split(","))
         );
     }
 
     @Transactional
     public ProfileDto updateName(String name) {
         currentUserService.updateName(name);
+        return profile();
+    }
+
+    @Transactional
+    public ProfileDto updatePreferences(ProfilePreferencesRequest request) {
+        var allowed = java.util.Set.of("AI_ML", "GENERATIVE_AI", "AI_CODING_AGENTS", "JAVA_BACKEND",
+                "DEVELOPER_TOOLS", "AI_AUTOMATION", "CLOUD_AI_INFRASTRUCTURE", "AI_RESEARCH");
+        var selected = request.preferences().stream().distinct().toList();
+        if (selected.stream().anyMatch(value -> value == null || !allowed.contains(value))) {
+            throw new com.dailyai.assistant.exception.BadRequestException("Unknown interest preference");
+        }
+        currentUserService.updatePreferences(String.join(",", selected));
         return profile();
     }
 

@@ -12,6 +12,7 @@ public record ProfileDto(
         int completedTopics,
         int totalTopics,
         int planProgressPercent,
-        List<HistoryDto> history
+        List<HistoryDto> history,
+        List<String> preferences
 ) {
 }

@@ -1,7 +1,7 @@
 package com.dailyai.assistant.scheduler;
 
 import com.dailyai.assistant.dto.RefreshResultDto;
-import com.dailyai.assistant.service.NewsIngestionService;
+import com.dailyai.assistant.service.SchedulerRefreshService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -12,10 +12,10 @@ public class NewsFetchScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(NewsFetchScheduler.class);
 
-    private final NewsIngestionService ingestionService;
+    private final SchedulerRefreshService refreshService;
 
-    public NewsFetchScheduler(NewsIngestionService ingestionService) {
-        this.ingestionService = ingestionService;
+    public NewsFetchScheduler(SchedulerRefreshService refreshService) {
+        this.refreshService = refreshService;
     }
 
     /** Every three hours in the configured time zone (Asia/Kolkata by default). */
@@ -23,9 +23,13 @@ public class NewsFetchScheduler {
     public void fetchFeeds() {
         log.info("Scheduled RSS refresh started");
         try {
-            RefreshResultDto result = ingestionService.refreshAll();
-            log.info("Scheduled RSS refresh finished: {} saved, {} duplicates, {} failed feeds",
-                    result.saved(), result.duplicates(), result.feedsFailed());
+            RefreshResultDto result = refreshService.runSynchronously("SCHEDULER");
+            if (result == null) {
+                log.info("Scheduled RSS refresh skipped because another execution is already running");
+            } else {
+                log.info("Scheduled RSS refresh finished: {} saved, {} duplicates, {} failed feeds",
+                        result.saved(), result.duplicates(), result.feedsFailed());
+            }
         } catch (Exception ex) {
             log.warn("Scheduled RSS refresh could not run: {}", ex.getMessage());
         }

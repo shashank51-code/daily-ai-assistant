@@ -27,4 +27,32 @@ class ArticleCategorizerTest {
     void usesLatestNewsWhenNoFallbackIsConfigured() {
         assertThat(categorizer.categorize("Unrelated", null, null)).isEqualTo("latest-ai-news");
     }
+
+    @Test
+    void scholarlyAbstractFromArxivWinsOverIncidentalToolWords() {
+        String slug = categorizer.categorize(
+                "When Does Confidence Reveal Problem Difficulty?",
+                "arXiv:2611.19173v1 Announce Type: new Abstract: We investigate confidence signals and tools for evaluation.",
+                "ai-research");
+        assertThat(slug).isEqualTo("ai-research");
+    }
+
+    @Test
+    void developerApiReleaseIsClassifiedAsATool() {
+        assertThat(categorizer.categorize("Spring AI releases a new Java API",
+                "The API is available for developers.", "latest-ai-news")).isEqualTo("ai-tools");
+    }
+
+    @Test
+    void explicitNewModelReleaseIsClassifiedAsAModel() {
+        assertThat(categorizer.categorize("OpenAI releases a new language model",
+                "The model is available today.", "generative-ai")).isEqualTo("ai-models");
+    }
+
+    @Test
+    void companyFundingAnnouncementIsClassifiedAsBusinessNews() {
+        assertThat(categorizer.categorize("AI startup raises $40 million in Series B",
+                "The company said the round will fund its business.", "latest-ai-news"))
+                .isEqualTo("ai-startups");
+    }
 }

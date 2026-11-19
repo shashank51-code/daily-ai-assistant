@@ -1,5 +1,11 @@
 import client from './client';
 
+export const getMe = () => client.get('/api/auth/me').then((r) => r.data);
+export const login = (email, password) =>
+  client.post('/api/auth/login', { email, password }).then((r) => r.data);
+export const register = (payload) => client.post('/api/auth/register', payload).then((r) => r.data);
+export const logout = () => client.post('/api/auth/logout');
+
 export const getDashboard = () => client.get('/api/dashboard').then((r) => r.data);
 
 export const getNews = (params = {}) => client.get('/api/news', { params }).then((r) => r.data);
@@ -32,6 +38,8 @@ export const removeBookmark = (itemType, itemId) =>
   client.delete('/api/bookmarks', { params: { itemType, itemId } });
 
 export const getProfile = () => client.get('/api/profile').then((r) => r.data);
+export const updateProfilePreferences = (preferences) =>
+  client.put('/api/profile/preferences', { preferences }).then((r) => r.data);
 export const updateProfileName = (name) =>
   client.put('/api/profile', { name }).then((r) => r.data);
 export const getHistory = (limit = 20) =>

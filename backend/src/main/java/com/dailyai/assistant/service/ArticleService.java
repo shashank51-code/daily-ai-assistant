@@ -34,19 +34,28 @@ public class ArticleService {
     private final ReadingHistoryRepository readingHistoryRepository;
     private final ExplanationService explanationService;
     private final CurrentUserService currentUserService;
+    private final ArticleUsefulnessEngine usefulnessEngine;
+    private final ResearchSummaryBuilder researchSummaryBuilder;
+    private final ArticleAiGenerationGuard aiGenerationGuard;
 
     public ArticleService(ArticleRepository articleRepository,
                           CategoryRepository categoryRepository,
                           BookmarkService bookmarkService,
                           ReadingHistoryRepository readingHistoryRepository,
                           ExplanationService explanationService,
-                          CurrentUserService currentUserService) {
+                          CurrentUserService currentUserService,
+                          ArticleUsefulnessEngine usefulnessEngine,
+                          ResearchSummaryBuilder researchSummaryBuilder,
+                          ArticleAiGenerationGuard aiGenerationGuard) {
         this.articleRepository = articleRepository;
         this.categoryRepository = categoryRepository;
         this.bookmarkService = bookmarkService;
         this.readingHistoryRepository = readingHistoryRepository;
         this.explanationService = explanationService;
         this.currentUserService = currentUserService;
+        this.usefulnessEngine = usefulnessEngine;
+        this.researchSummaryBuilder = researchSummaryBuilder;
+        this.aiGenerationGuard = aiGenerationGuard;
     }
 
     @Transactional(readOnly = true)
@@ -61,7 +70,7 @@ public class ArticleService {
             String slug = requireCategory(category);
             result = articleRepository.findByCategorySlug(slug, pageable);
         }
-        return PageResponse.from(result, article -> ArticleDto.from(article, bookmarked.contains(article.getId())));
+        return PageResponse.from(result, article -> toDto(article, bookmarked.contains(article.getId())));
     }
 
     @Transactional(readOnly = true)
@@ -76,7 +85,7 @@ public class ArticleService {
         }
         Set<Long> bookmarked = bookmarkService.bookmarkedIds(Bookmark.ItemType.ARTICLE);
         return articles.stream()
-                .map(article -> ArticleDto.from(article, bookmarked.contains(article.getId())))
+                .map(article -> toDto(article, bookmarked.contains(article.getId())))
                 .toList();
     }
 
@@ -84,9 +93,19 @@ public class ArticleService {
     public ArticleDetailDto get(Long id) {
         Article article = requireArticle(id);
         Boolean bookmarked = bookmarkService.isBookmarked(Bookmark.ItemType.ARTICLE, id);
-        var explanation = explanationService.getOrCreate(article, true);
+        var currentUser = currentUserService.getCurrentUserOrNull();
+        // Public article reads keep working and still receive any cached AI text,
+        // but only an authenticated reader can start a new billable generation.
+        boolean allowNewAi = currentUser.isPresent();
+        var explanation = aiGenerationGuard.run(id,
+                () -> explanationService.getOrCreate(article, allowNewAi));
         recordRead(article);
-        return ArticleDetailDto.from(article, explanation, bookmarked);
+        List<String> preferences = currentUser
+                .map(User::getPreferenceList)
+                .orElse(List.of());
+        return ArticleDetailDto.from(article, explanation, bookmarked,
+                usefulnessEngine.evaluate(article, preferences),
+                researchSummaryBuilder.build(article));
     }
 
     @Transactional(readOnly = true)
@@ -105,7 +124,15 @@ public class ArticleService {
             String slug = requireCategory(category);
             result = articleRepository.searchInCategory(trimmed, slug, pageable);
         }
-        return PageResponse.from(result, article -> ArticleDto.from(article, bookmarked.contains(article.getId())));
+        return PageResponse.from(result, article -> toDto(article, bookmarked.contains(article.getId())));
+    }
+
+    public ArticleDto toDto(Article article, boolean bookmarked) {
+        List<String> preferences = currentUserService.getCurrentUserOrNull()
+                .map(User::getPreferenceList)
+                .orElse(List.of());
+        return ArticleDto.from(article, bookmarked,
+                usefulnessEngine.evaluate(article, preferences));
     }
 
     @Transactional(readOnly = true)
@@ -117,7 +144,11 @@ public class ArticleService {
     /** Upserts the reading history row so the profile shows the most recent read time. */
     @Transactional
     public void recordRead(Article article) {
-        User user = currentUserService.getCurrentUser();
+        User user = currentUserService.getCurrentUserOrNull().orElse(null);
+        if (user == null) {
+            // Public discovery remains readable without creating an ownerless row.
+            return;
+        }
         ReadingHistory history = readingHistoryRepository
                 .findByUserIdAndArticleId(user.getId(), article.getId())
                 .orElseGet(ReadingHistory::new);

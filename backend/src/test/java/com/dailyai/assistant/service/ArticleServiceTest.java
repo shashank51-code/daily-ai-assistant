@@ -3,8 +3,10 @@ package com.dailyai.assistant.service;
 import com.dailyai.assistant.dto.ArticleDto;
 import com.dailyai.assistant.dto.PageResponse;
 import com.dailyai.assistant.entity.Article;
+import com.dailyai.assistant.entity.ArticleExplanation;
 import com.dailyai.assistant.entity.Bookmark;
 import com.dailyai.assistant.entity.Category;
+import com.dailyai.assistant.entity.User;
 import com.dailyai.assistant.exception.ResourceNotFoundException;
 import com.dailyai.assistant.repository.ArticleRepository;
 import com.dailyai.assistant.repository.CategoryRepository;
@@ -53,7 +55,10 @@ class ArticleServiceTest {
     @BeforeEach
     void setUp() {
         service = new ArticleService(articleRepository, categoryRepository, bookmarkService,
-                readingHistoryRepository, explanationService, currentUserService);
+                readingHistoryRepository, explanationService, currentUserService, new ArticleUsefulnessEngine(),
+                new ResearchSummaryBuilder(), new ArticleAiGenerationGuard());
+        org.mockito.Mockito.lenient().when(currentUserService.getCurrentUser())
+                .thenReturn(new com.dailyai.assistant.entity.User("Test", "test@example.com"));
     }
 
     @Test
@@ -91,12 +96,48 @@ class ArticleServiceTest {
     }
 
     @Test
+    void authenticatedDetailCanStartNewAiGeneration() {
+        Article article = article(1L, "News", "generative-ai", Instant.parse("2026-11-16T00:00:00Z"));
+        when(articleRepository.findById(1L)).thenReturn(Optional.of(article));
+        when(bookmarkService.isBookmarked(Bookmark.ItemType.ARTICLE, 1L)).thenReturn(false);
+        when(currentUserService.getCurrentUserOrNull())
+                .thenReturn(Optional.of(new User("Test", "test@example.com")));
+        when(explanationService.getOrCreate(article, true)).thenReturn(basicExplanation(article));
+
+        service.get(1L);
+
+        verify(explanationService).getOrCreate(article, true);
+    }
+
+    @Test
+    void anonymousDetailNeverStartsNewAiGeneration() {
+        Article article = article(1L, "News", "generative-ai", Instant.parse("2026-11-16T00:00:00Z"));
+        when(articleRepository.findById(1L)).thenReturn(Optional.of(article));
+        when(bookmarkService.isBookmarked(Bookmark.ItemType.ARTICLE, 1L)).thenReturn(false);
+        when(currentUserService.getCurrentUserOrNull()).thenReturn(Optional.empty());
+        when(explanationService.getOrCreate(article, false)).thenReturn(basicExplanation(article));
+
+        service.get(1L);
+
+        verify(explanationService).getOrCreate(article, false);
+    }
+
+    @Test
     void detailThrowsWhenArticleDoesNotExist() {
         when(articleRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.get(99L))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("99");
+    }
+
+    private ArticleExplanation basicExplanation(Article article) {
+        ArticleExplanation explanation = new ArticleExplanation();
+        explanation.setArticle(article);
+        explanation.setGeneratedBy(ArticleExplanation.GeneratedBy.BASIC);
+        explanation.setGeneratedAt(Instant.now());
+        explanation.setWhatHappened("Offline text.");
+        return explanation;
     }
 
     private Article article(Long id, String title, String slug, Instant publishedAt) {

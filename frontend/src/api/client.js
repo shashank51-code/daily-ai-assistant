@@ -3,19 +3,69 @@ import axios from 'axios';
 /**
  * In development Vite proxies /api to http://localhost:8080.
  * In a packaged Android build the app has no proxy, so VITE_API_BASE_URL must be
- * provided at build time (for example http://192.168.1.20:8080 or a public URL).
+ * provided at build time (for example http://10.0.2.2:8080 or a public URL).
  */
 const baseURL = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? '' : 'http://localhost:8080');
 
 const client = axios.create({
   baseURL,
   timeout: 20000,
+  withCredentials: true,
   headers: { Accept: 'application/json' },
 });
 
+let csrfToken = null;
+
+/** Session-backed CSRF token is fetched before any mutating request. */
+export async function ensureCsrfToken(force = false) {
+  if (csrfToken && !force) return csrfToken;
+  const { data } = await client.get('/api/auth/csrf');
+  csrfToken = data.token;
+  return csrfToken;
+}
+
+export function clearCsrfToken() {
+  csrfToken = null;
+}
+
+client.interceptors.request.use(async (config) => {
+  const method = (config.method || 'get').toUpperCase();
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    const token = await ensureCsrfToken();
+    config.headers = config.headers || {};
+    config.headers['X-XSRF-TOKEN'] = token;
+  }
+  return config;
+});
+
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status;
+    const url = error?.config?.url || '';
+    if (status === 401) {
+      csrfToken = null;
+      if (!url.includes('/api/auth/login') && !url.includes('/api/auth/me')) {
+        window.dispatchEvent(new CustomEvent('dailyai:unauthorized'));
+      }
+    }
+    if (status === 403 && url.includes('csrf')) {
+      csrfToken = null;
+    }
+    return Promise.reject(error);
+  },
+);
+
 export function apiErrorMessage(error) {
+  const details = error?.response?.data?.details;
+  if (Array.isArray(details) && details.length) {
+    return details.join(' ');
+  }
   if (error?.response?.data?.message) {
     return error.response.data.message;
+  }
+  if (error?.response?.status === 429) {
+    return 'Too many attempts. Please wait before trying again.';
   }
   if (error?.response?.status) {
     return `The server responded with status ${error.response.status}.`;

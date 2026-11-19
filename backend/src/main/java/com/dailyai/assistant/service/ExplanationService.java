@@ -1,16 +1,20 @@
 package com.dailyai.assistant.service;
 
+import com.dailyai.assistant.config.AppProperties;
 import com.dailyai.assistant.entity.Article;
 import com.dailyai.assistant.entity.ArticleExplanation;
 import com.dailyai.assistant.integration.ExplanationDraft;
 import com.dailyai.assistant.integration.ExplanationProvider;
 import com.dailyai.assistant.repository.ArticleExplanationRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -21,11 +25,17 @@ public class ExplanationService {
 
     private final ArticleExplanationRepository explanationRepository;
     private final ExplanationProvider explanationProvider;
+    private final ObjectMapper objectMapper;
+    private final int retryAfterMinutes;
 
     public ExplanationService(ArticleExplanationRepository explanationRepository,
-                              ExplanationProvider explanationProvider) {
+                              ExplanationProvider explanationProvider,
+                              ObjectMapper objectMapper,
+                              AppProperties properties) {
         this.explanationRepository = explanationRepository;
         this.explanationProvider = explanationProvider;
+        this.objectMapper = objectMapper;
+        this.retryAfterMinutes = Math.max(0, properties.getAi().getRetryAfterMinutes());
     }
 
     /**
@@ -52,14 +62,20 @@ public class ExplanationService {
         if (existing.isEmpty()) {
             ArticleExplanation created = createBasic(article);
             if (allowAi) {
-                return upgradeWithAi(created, article);
+                return upgradeWithAi(created, article, false);
             }
             return created;
         }
 
         ArticleExplanation explanation = existing.get();
-        if (allowAi && explanation.getGeneratedBy() == ArticleExplanation.GeneratedBy.BASIC) {
-            return upgradeWithAi(explanation, article);
+        if (explanation.getGeneratedBy() == ArticleExplanation.GeneratedBy.BASIC) {
+            // Refresh old BASIC rows using current source-grounded templates so persisted
+            // pre-Phase-4 generic category claims are not shown on existing articles.
+            fillBasic(explanation, article);
+            explanationRepository.save(explanation);
+            if (allowAi) {
+                return upgradeWithAi(explanation, article, false);
+            }
         }
         return explanation;
     }
@@ -68,21 +84,37 @@ public class ExplanationService {
     public ArticleExplanation regenerateWithAi(Article article) {
         ArticleExplanation explanation = explanationRepository.findByArticleId(article.getId())
                 .orElseGet(() -> createBasic(article));
-        return upgradeWithAi(explanation, article);
+        return upgradeWithAi(explanation, article, true);
     }
 
     public boolean isAiEnabled() {
         return explanationProvider.isEnabled();
     }
 
-    private ArticleExplanation upgradeWithAi(ArticleExplanation explanation, Article article) {
+    private ArticleExplanation upgradeWithAi(ArticleExplanation explanation, Article article, boolean forced) {
         if (!explanationProvider.isEnabled()) {
             return explanation;
         }
-        Optional<ExplanationDraft> draft = explanationProvider.generateExplanation(article);
-        if (draft.isEmpty()) {
+        if (!forced && recentlyAttempted(explanation)) {
+            log.debug("Skipping AI retry for article {}: attempted at {}", article.getId(),
+                    explanation.getAiAttemptedAt());
             return explanation;
         }
+
+        explanation.setAiAttemptedAt(Instant.now());
+        explanation.setAiAttempts(explanation.getAiAttempts() + 1);
+        Optional<ExplanationDraft> draft = explanationProvider.generateExplanation(article)
+                .filter(ExplanationDraft::isComplete)
+                .filter(value -> value.hasSourceEvidence(article))
+                .filter(value -> value.hasGroundedSourceFact(article));
+
+        if (draft.isEmpty()) {
+            // Persist the attempt timestamp so a broken provider does not spend budget
+            // again on every page load. The BASIC text stays visible.
+            explanationRepository.save(explanation);
+            return explanation;
+        }
+
         ExplanationDraft value = draft.get();
         explanation.setWhatHappened(value.whatHappened());
         explanation.setTechnology(value.technology());
@@ -92,10 +124,43 @@ public class ExplanationService {
         explanation.setFresherLearning(value.fresherLearning());
         explanation.setPracticalExample(value.practicalExample());
         explanation.setRelatedTechnologies(value.relatedTechnologies());
+        explanation.setWhoBenefits(value.whoBenefits());
+        explanation.setUseCases(value.useCases());
+        explanation.setTechnicalExplanation(value.technicalExplanation());
+        explanation.setSourceEvidence(value.sourceEvidence());
+        explanation.setClaimsJson(toJson(value.supportedClaims(article)));
+
+        ExplanationDraft.Metadata metadata = value.metadata() == null
+                ? ExplanationDraft.Metadata.none() : value.metadata();
+        explanation.setProvider(metadata.provider());
+        explanation.setModel(metadata.model());
+        explanation.setInputTokens(metadata.inputTokens());
+        explanation.setOutputTokens(metadata.outputTokens());
+        explanation.setLatencyMs((int) metadata.latencyMs());
+
         explanation.setGeneratedBy(ArticleExplanation.GeneratedBy.AI);
         explanation.setGeneratedAt(Instant.now());
-        log.info("Generated AI explanation for article {}", article.getId());
+        log.info("Generated AI explanation for article {} with {} supported claims",
+                article.getId(), value.supportedClaims(article).size());
         return explanationRepository.save(explanation);
+    }
+
+    private boolean recentlyAttempted(ArticleExplanation explanation) {
+        Instant attemptedAt = explanation.getAiAttemptedAt();
+        if (attemptedAt == null) {
+            return false;
+        }
+        Duration window = Duration.ofMinutes(retryAfterMinutes);
+        return retryAfterMinutes > 0 && attemptedAt.plus(window).isAfter(Instant.now());
+    }
+
+    private String toJson(List<ExplanationDraft.Claim> claims) {
+        try {
+            return objectMapper.writeValueAsString(claims);
+        } catch (Exception ex) {
+            log.warn("Could not serialise claim evidence: {}", ex.getMessage());
+            return null;
+        }
     }
 
     private void fillBasic(ArticleExplanation explanation, Article article) {
@@ -106,41 +171,17 @@ public class ExplanationService {
                 ? description
                 : "The feed published this item without a description. The title is: " + article.getTitle());
 
-        explanation.setTechnology(switch (slug) {
-            case "generative-ai" -> "This belongs to Generative AI: models that produce new text, images, audio or code "
-                    + "after learning statistical patterns from large amounts of data.";
-            case "ai-models" -> "This is about an AI model. A model is a trained file of weights that turns an input "
-                    + "into a prediction or a generated output.";
-            case "ai-agents" -> "This is about AI agents: language models that can plan steps and call tools in a loop "
-                    + "to complete a goal.";
-            case "deep-learning" -> "This is about deep learning, which trains multi layer neural networks on data.";
-            case "machine-learning" -> "This is about machine learning, where a program learns patterns from examples "
-                    + "instead of following hand written rules.";
-            case "ai-research" -> "This is a research item. Research usually proposes a method and evaluates it on "
-                    + "benchmarks, so the result should be read as a study, not a shipped product.";
-            case "ai-tools" -> "This covers AI developer tools and libraries that help teams build with models.";
-            case "ai-startups" -> "This is business news about an AI company rather than a technical release.";
-            case "tutorials" -> "This is learning material that explains a practical AI technique.";
-            default -> UNKNOWN;
-        });
+        explanation.setTechnology(UNKNOWN);
 
-        explanation.setImportance("Tracking this helps you see how the AI industry is moving and which skills are "
-                + "becoming useful. Read the original article before relying on any numbers or claims.");
+        explanation.setImportance("ai-research".equals(slug)
+                ? "The abstract reports a research result, not proof that the result is ready to use in a product. "
+                    + "Read the study design and limitations before applying it."
+                : "Tracking this helps you see how the AI industry is moving and which skills are becoming useful. "
+                    + "Read the original article before relying on any numbers or claims.");
 
         explanation.setHowItWorks(UNKNOWN);
 
-        explanation.setWhereUsed(switch (slug) {
-            case "generative-ai" -> "Common uses: chat assistants, code generation, summarisation, image and video tools.";
-            case "ai-models" -> "Common uses: chat, coding assistance, search, document analysis and automation.";
-            case "ai-agents" -> "Common uses: research assistants, workflow automation and developer tooling.";
-            case "deep-learning" -> "Common uses: vision, speech, translation and recommendation systems.";
-            case "machine-learning" -> "Common uses: fraud detection, recommendations, forecasting and classification.";
-            case "ai-research" -> "Common uses: new model techniques, evaluation methods and training improvements.";
-            case "ai-tools" -> "Common uses: building, testing and deploying AI features in real products.";
-            case "ai-startups" -> "Common uses: understanding which products and business models are gaining traction.";
-            case "tutorials" -> "Common uses: learning a technique you can apply in your own project.";
-            default -> UNKNOWN;
-        });
+        explanation.setWhereUsed(UNKNOWN);
 
         explanation.setFresherLearning(switch (slug) {
             case "generative-ai" -> "Learn how LLMs work, then practise prompt engineering and build one small "
@@ -158,20 +199,25 @@ public class ExplanationService {
             default -> "Open the original article and write a three line summary in your own words.";
         });
 
-        explanation.setPracticalExample("Open the original article, summarise it in three lines, then note one new term "
-                + "and look it up in the learning roadmap.");
+        explanation.setPracticalExample("A safe next step is to open the original article, summarize its main claim, "
+                + "and check the source details before applying it. This is a reading exercise, not a claimed product use case.");
 
-        explanation.setRelatedTechnologies(switch (slug) {
-            case "generative-ai" -> "LLMs, embeddings, prompt engineering, RAG";
-            case "ai-models" -> "Transformers, tokenisation, inference, fine-tuning";
-            case "ai-agents" -> "Tool calling, function calling, multi-agent systems, RAG";
-            case "deep-learning" -> "Neural networks, CNN, RNN, transformers";
-            case "machine-learning" -> "Supervised learning, evaluation metrics, feature engineering";
-            case "ai-research" -> "Benchmarks, datasets, evaluation";
-            case "ai-tools" -> "APIs, SDKs, vector databases";
-            case "ai-startups" -> "Product development, AI APIs";
-            case "tutorials" -> "Python, APIs, project building";
-            default -> UNKNOWN;
-        });
+        explanation.setRelatedTechnologies(UNKNOWN);
+
+        explanation.setWhoBenefits("Readers following this topic. The feed does not identify a specific audience.");
+
+        explanation.setUseCases("The feed does not establish a concrete use case. Read the original article before applying it.");
+
+        explanation.setTechnicalExplanation(UNKNOWN);
+
+        // BASIC text is publisher text plus transparent templates; there are no claimed
+        // AI interpretations and therefore no claim-level evidence to persist.
+        explanation.setClaimsJson(null);
+        explanation.setSourceEvidence(null);
+        explanation.setProvider(null);
+        explanation.setModel(null);
+        explanation.setInputTokens(null);
+        explanation.setOutputTokens(null);
+        explanation.setLatencyMs(null);
     }
 }

@@ -10,9 +10,11 @@ public class AppProperties {
 
     private String timezone = "Asia/Kolkata";
     private String adminApiKey = "";
+    private String schedulerApiKey = "";
     private Cors cors = new Cors();
     private Rss rss = new Rss();
     private Ai ai = new Ai();
+    private Auth auth = new Auth();
 
     public String getTimezone() {
         return timezone;
@@ -28,6 +30,14 @@ public class AppProperties {
 
     public void setAdminApiKey(String adminApiKey) {
         this.adminApiKey = adminApiKey;
+    }
+
+    public String getSchedulerApiKey() {
+        return schedulerApiKey;
+    }
+
+    public void setSchedulerApiKey(String schedulerApiKey) {
+        this.schedulerApiKey = schedulerApiKey;
     }
 
     public Cors getCors() {
@@ -52,6 +62,14 @@ public class AppProperties {
 
     public void setAi(Ai ai) {
         this.ai = ai;
+    }
+
+    public Auth getAuth() {
+        return auth;
+    }
+
+    public void setAuth(Auth auth) {
+        this.auth = auth;
     }
 
     public static class Cors {
@@ -153,16 +171,69 @@ public class AppProperties {
         }
     }
 
+    public static class Auth {
+        private String bootstrapEmail = "";
+        private String bootstrapPassword = "";
+        private String bootstrapRole = "USER";
+        private int maxLoginAttempts = 5;
+        private int loginWindowMinutes = 15;
+
+        public String getBootstrapEmail() {
+            return bootstrapEmail;
+        }
+
+        public void setBootstrapEmail(String bootstrapEmail) {
+            this.bootstrapEmail = bootstrapEmail;
+        }
+
+        public String getBootstrapPassword() {
+            return bootstrapPassword;
+        }
+
+        public void setBootstrapPassword(String bootstrapPassword) {
+            this.bootstrapPassword = bootstrapPassword;
+        }
+
+        public String getBootstrapRole() {
+            return bootstrapRole;
+        }
+
+        public void setBootstrapRole(String bootstrapRole) {
+            this.bootstrapRole = bootstrapRole;
+        }
+
+        public int getMaxLoginAttempts() {
+            return maxLoginAttempts;
+        }
+
+        public void setMaxLoginAttempts(int maxLoginAttempts) {
+            this.maxLoginAttempts = maxLoginAttempts;
+        }
+
+        public int getLoginWindowMinutes() {
+            return loginWindowMinutes;
+        }
+
+        public void setLoginWindowMinutes(int loginWindowMinutes) {
+            this.loginWindowMinutes = loginWindowMinutes;
+        }
+    }
+
     public static class Ai {
         private boolean enabled = false;
-        private String baseUrl = "https://api.openai.com/v1";
+        private String provider = "groq";
+        private String baseUrl = "https://api.groq.com/openai/v1";
         private String apiKey = "";
-        private String model = "gpt-4o-mini";
+        private String model = "openai/gpt-oss-20b";
         private int timeoutMs = 30000;
         private int maxAttempts = 2;
         private long retryDelayMs = 1000;
         private int failureThreshold = 2;
         private long cooldownMs = 300000;
+        /** Hard cap on provider requests per local day. Zero disables the cap. */
+        private int maxCallsPerDay = 100;
+        /** Do not retry an article whose AI attempt already failed inside this window. */
+        private int retryAfterMinutes = 360;
 
         public boolean isEnabled() {
             return enabled && apiKey != null && !apiKey.isBlank();
@@ -170,6 +241,14 @@ public class AppProperties {
 
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
+        }
+
+        public String getProvider() {
+            return provider;
+        }
+
+        public void setProvider(String provider) {
+            this.provider = provider;
         }
 
         public String getBaseUrl() {
@@ -234,6 +313,22 @@ public class AppProperties {
 
         public void setCooldownMs(long cooldownMs) {
             this.cooldownMs = cooldownMs;
+        }
+
+        public int getMaxCallsPerDay() {
+            return maxCallsPerDay;
+        }
+
+        public void setMaxCallsPerDay(int maxCallsPerDay) {
+            this.maxCallsPerDay = maxCallsPerDay;
+        }
+
+        public int getRetryAfterMinutes() {
+            return retryAfterMinutes;
+        }
+
+        public void setRetryAfterMinutes(int retryAfterMinutes) {
+            this.retryAfterMinutes = retryAfterMinutes;
         }
     }
 }

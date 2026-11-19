@@ -6,16 +6,17 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
-/**
- * Very small keyword based categorizer. It is intentionally simple and explainable:
- * title matches weigh more than description matches. The feed configuration provides
- * a fallback category for text that matches nothing.
- */
+/** Explainable category rules with high-confidence article-type evidence ahead of feed fallback scoring. */
 @Component
 public class ArticleCategorizer {
 
     private static final Map<String, List<String>> KEYWORDS = new LinkedHashMap<>();
+    private static final Pattern FUNDING_TITLE = Pattern.compile("\\b(funding round|raises? \\$|raised \\$|series [a-f]\\b|seed round|acqui(?:res|red|sition)|ipo)\\b");
+    private static final Pattern RESEARCH_MARKER = Pattern.compile("(?is)(arxiv(?:\\.org)?\\s*:\\s*|arxiv\\.org/|doi\\s*:\\s*|announce type:.*abstract:)");
+    private static final Pattern RESEARCH_METHOD = Pattern.compile("(?i)\\b(abstract|we investigate|we evaluate|we examine|we study|we propose|we find|experiments?|dataset|preprint)\\b");
+    private static final Pattern RELEASE = Pattern.compile("(?i)\\b(release[sd]?|launch(?:es|ed)?|introduc(?:e|es|ed)|announc(?:e|es|ed)|available)\\b");
 
     static {
         KEYWORDS.put("ai-agents", List.of(
@@ -51,30 +52,54 @@ public class ArticleCategorizer {
     }
 
     public String categorize(String title, String description, String fallbackSlug) {
-        String titleText = title == null ? "" : title.toLowerCase(Locale.ROOT);
-        String descriptionText = description == null ? "" : description.toLowerCase(Locale.ROOT);
+        String titleText = normalize(title);
+        String descriptionText = normalize(description);
+        String combined = titleText + " " + descriptionText;
+
+        // Explicit business announcements describe company activity, even if their copy also
+        // mentions a model or tool.
+        if (FUNDING_TITLE.matcher(titleText).find()) return "ai-startups";
+
+        // Scholarly metadata is stronger evidence than incidental words such as "tool" in an abstract.
+        boolean scholarlyRecord = RESEARCH_MARKER.matcher(descriptionText).find()
+                && ("ai-research".equals(fallbackSlug)
+                || RESEARCH_METHOD.matcher(descriptionText).find());
+        boolean researchArticle = titleText.matches(".*\\b(research paper|preprint|research study)\\b.*")
+                && RESEARCH_METHOD.matcher(descriptionText).find();
+        if (scholarlyRecord || researchArticle) return "ai-research";
+
+        if (combined.matches(".*\\b(ai coding agent|coding agent|code agent|agentic coding)\\b.*")) {
+            return "ai-agents";
+        }
+
+        boolean modelRelease = RELEASE.matcher(titleText).find()
+                && titleText.matches(".*\\b(model|llm|language model)\\b.*");
+        if (modelRelease) return "ai-models";
+
+        boolean developerTool = titleText.matches(".*\\b(api|sdk|library|developer tool|ide|plugin|framework)\\b.*")
+                || titleText.contains("open-source tool") || titleText.contains("open source tool");
+        if (developerTool && (RELEASE.matcher(titleText).find() || fallbackSlug == null || fallbackSlug.isBlank())) {
+            return "ai-tools";
+        }
 
         String best = null;
         int bestScore = 0;
         for (Map.Entry<String, List<String>> entry : KEYWORDS.entrySet()) {
             int score = 0;
             for (String keyword : entry.getValue()) {
-                if (titleText.contains(keyword)) {
-                    score += 3;
-                }
-                if (descriptionText.contains(keyword)) {
-                    score += 1;
-                }
+                if (titleText.contains(keyword)) score += 3;
+                if (descriptionText.contains(keyword)) score += 1;
             }
             if (score > bestScore) {
                 bestScore = score;
                 best = entry.getKey();
             }
         }
+        if (best != null) return best;
+        return fallbackSlug == null || fallbackSlug.isBlank() ? "latest-ai-news" : fallbackSlug;
+    }
 
-        if (best == null) {
-            return fallbackSlug == null || fallbackSlug.isBlank() ? "latest-ai-news" : fallbackSlug;
-        }
-        return best;
+    private String normalize(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.ROOT);
     }
 }

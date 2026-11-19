@@ -50,6 +50,43 @@ public class ArticleExplanation {
     @Column(name = "related_technologies", columnDefinition = "TEXT")
     private String relatedTechnologies;
 
+    @Column(name = "who_benefits", columnDefinition = "TEXT")
+    private String whoBenefits;
+
+    @Column(name = "use_cases", columnDefinition = "TEXT")
+    private String useCases;
+
+    @Column(name = "technical_explanation", columnDefinition = "TEXT")
+    private String technicalExplanation;
+
+    /** JSON array of {statement, evidence} pairs, each quote verified against the feed text. */
+    @Column(name = "claims_json", columnDefinition = "TEXT")
+    private String claimsJson;
+
+    @Column(name = "source_evidence", columnDefinition = "TEXT")
+    private String sourceEvidence;
+
+    @Column(length = 50)
+    private String provider;
+
+    @Column(length = 100)
+    private String model;
+
+    @Column(name = "input_tokens")
+    private Integer inputTokens;
+
+    @Column(name = "output_tokens")
+    private Integer outputTokens;
+
+    @Column(name = "latency_ms")
+    private Integer latencyMs;
+
+    @Column(name = "ai_attempted_at")
+    private Instant aiAttemptedAt;
+
+    @Column(name = "ai_attempts", nullable = false)
+    private int aiAttempts = 0;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "generated_by", nullable = false, length = 20)
     private GeneratedBy generatedBy = GeneratedBy.BASIC;
@@ -135,6 +172,102 @@ public class ArticleExplanation {
 
     public void setRelatedTechnologies(String relatedTechnologies) {
         this.relatedTechnologies = relatedTechnologies;
+    }
+
+    public String getWhoBenefits() {
+        return whoBenefits;
+    }
+
+    public void setWhoBenefits(String whoBenefits) {
+        this.whoBenefits = whoBenefits;
+    }
+
+    public String getUseCases() {
+        return useCases;
+    }
+
+    public void setUseCases(String useCases) {
+        this.useCases = useCases;
+    }
+
+    public String getTechnicalExplanation() {
+        return technicalExplanation;
+    }
+
+    public void setTechnicalExplanation(String technicalExplanation) {
+        this.technicalExplanation = technicalExplanation;
+    }
+
+    public String getClaimsJson() {
+        return claimsJson;
+    }
+
+    public void setClaimsJson(String claimsJson) {
+        this.claimsJson = claimsJson;
+    }
+
+    public String getSourceEvidence() {
+        return sourceEvidence;
+    }
+
+    public void setSourceEvidence(String sourceEvidence) {
+        this.sourceEvidence = sourceEvidence;
+    }
+
+    public String getProvider() {
+        return provider;
+    }
+
+    public void setProvider(String provider) {
+        this.provider = provider;
+    }
+
+    public String getModel() {
+        return model;
+    }
+
+    public void setModel(String model) {
+        this.model = model;
+    }
+
+    public Integer getInputTokens() {
+        return inputTokens;
+    }
+
+    public void setInputTokens(Integer inputTokens) {
+        this.inputTokens = inputTokens;
+    }
+
+    public Integer getOutputTokens() {
+        return outputTokens;
+    }
+
+    public void setOutputTokens(Integer outputTokens) {
+        this.outputTokens = outputTokens;
+    }
+
+    public Integer getLatencyMs() {
+        return latencyMs;
+    }
+
+    public void setLatencyMs(Integer latencyMs) {
+        this.latencyMs = latencyMs;
+    }
+
+    public Instant getAiAttemptedAt() {
+        return aiAttemptedAt;
+    }
+
+    public void setAiAttemptedAt(Instant aiAttemptedAt) {
+        this.aiAttemptedAt = aiAttemptedAt;
+    }
+
+    public int getAiAttempts() {
+        return aiAttempts;
+    }
+
+    public void setAiAttempts(int aiAttempts) {
+        this.aiAttempts = aiAttempts;
     }
 
     public GeneratedBy getGeneratedBy() {

@@ -2,8 +2,8 @@
 /**
  * Builds the Android debug APK with a project-local toolchain.
  *
- * - Uses JDK 17 (required by Android Gradle Plugin 8.2) without touching the
- *   machine-wide JAVA_HOME, which may point at a newer JDK.
+ * - Uses the JDK required by the installed Capacitor Android major without
+ *   touching the machine-wide JAVA_HOME.
  * - Finds the Android SDK from ANDROID_HOME/ANDROID_SDK_ROOT, the project-local
  *   .tools/android-sdk, or the default per-user install.
  * - Writes android/local.properties (gitignored) so Gradle sees the SDK.
@@ -31,21 +31,32 @@ function javaMajor(home) {
   return match ? Number(match[1]) : null;
 }
 
-function findJdk17() {
+function findJdk(requiredMajor) {
   const candidates = [];
   if (process.env.JAVA_HOME) candidates.push(process.env.JAVA_HOME);
+  const projectJdkRoot = join(projectRoot, '.tools', `jdk-${requiredMajor}`);
+  if (existsSync(projectJdkRoot)) {
+    candidates.push(projectJdkRoot);
+    for (const name of readdirSync(projectJdkRoot)) candidates.push(join(projectJdkRoot, name));
+  }
   const jdksDir = join(homedir(), '.jdks');
   if (existsSync(jdksDir)) {
     for (const name of readdirSync(jdksDir)) candidates.push(join(jdksDir, name));
   }
   for (const dir of candidates) {
     if (!existsSync(join(dir, 'bin', isWindows ? 'java.exe' : 'java'))) continue;
-    if (javaMajor(dir) === 17) return dir;
+    if (javaMajor(dir) === requiredMajor) return dir;
   }
   return null;
 }
 
-function findAndroidSdk() {
+const appPackage = JSON.parse(readFileSync(join(frontendDir, 'package.json'), 'utf8'));
+const capacitorRange = appPackage.dependencies?.['@capacitor/core'] || '';
+const capacitorMajor = Number(/\d+/.exec(capacitorRange)?.[0] || 0);
+const requiredJdkMajor = capacitorMajor >= 7 ? 21 : 17;
+const requiredAndroidApi = capacitorMajor >= 8 ? 36 : capacitorMajor >= 7 ? 35 : 34;
+
+function findAndroidSdk(requiredApi) {
   const candidates = [
     process.env.ANDROID_HOME,
     process.env.ANDROID_SDK_ROOT,
@@ -56,24 +67,24 @@ function findAndroidSdk() {
   ].filter(Boolean);
 
   for (const dir of candidates) {
-    if (existsSync(join(dir, 'platforms', 'android-34'))) return dir;
+    if (existsSync(join(dir, 'platforms', `android-${requiredApi}`))) return dir;
   }
   return null;
 }
 
-const jdk17 = findJdk17();
-if (!jdk17) {
+const requiredJdk = findJdk(requiredJdkMajor);
+if (!requiredJdk) {
   fail(
-    'JDK 17 was not found. Install one (for example via IntelliJ) or set JAVA_HOME to a JDK 17 ' +
-      'installation. Android Gradle Plugin 8.2 does not support newer JDKs.',
+    `JDK ${requiredJdkMajor} was not found. Install it or set JAVA_HOME to a JDK ${requiredJdkMajor} ` +
+      'installation. The required version depends on the installed Capacitor Android major.',
   );
 }
 
-const androidSdk = findAndroidSdk();
+const androidSdk = findAndroidSdk(requiredAndroidApi);
 if (!androidSdk) {
   fail(
-    'Android SDK with platform 34 was not found. Set ANDROID_HOME or install the SDK ' +
-      'command-line tools and run: sdkmanager "platforms;android-34" "build-tools;34.0.0" ' +
+    `Android SDK with platform ${requiredAndroidApi} was not found. Set ANDROID_HOME or install the SDK ` +
+      `command-line tools and run: sdkmanager "platforms;android-${requiredAndroidApi}" ` +
       '"platform-tools"',
   );
 }
@@ -87,13 +98,13 @@ if (!existsSync(localProperties)) {
 
 const env = {
   ...process.env,
-  JAVA_HOME: jdk17,
+  JAVA_HOME: requiredJdk,
   ANDROID_HOME: androidSdk,
   ANDROID_SDK_ROOT: androidSdk,
-  PATH: `${join(jdk17, 'bin')}${isWindows ? ';' : ':'}${join(androidSdk, 'platform-tools')}${isWindows ? ';' : ':'}${process.env.PATH}`,
+  PATH: `${join(requiredJdk, 'bin')}${isWindows ? ';' : ':'}${join(androidSdk, 'platform-tools')}${isWindows ? ';' : ':'}${process.env.PATH}`,
 };
 
-console.log(`JDK:  ${jdk17}`);
+console.log(`JDK:  ${requiredJdk}`);
 console.log(`SDK:  ${androidSdk}`);
 
 function run(label, command, args, cwd = frontendDir) {

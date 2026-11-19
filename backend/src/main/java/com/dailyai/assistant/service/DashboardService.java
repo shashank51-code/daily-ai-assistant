@@ -104,7 +104,7 @@ public class DashboardService {
                     List.of("generative-ai"), PageRequest.of(0, 5));
         }
         return models.stream()
-                .map(article -> ArticleDto.from(article, bookmarked.contains(article.getId())))
+                .map(article -> articleService.toDto(article, bookmarked.contains(article.getId())))
                 .toList();
     }
 

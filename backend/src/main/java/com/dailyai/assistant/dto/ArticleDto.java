@@ -14,9 +14,10 @@ public record ArticleDto(
         String category,
         String categoryName,
         String imageUrl,
-        boolean bookmarked
+        boolean bookmarked,
+        ArticleUsefulnessDto usefulness
 ) {
-    public static ArticleDto from(Article article, boolean bookmarked) {
+    public static ArticleDto from(Article article, boolean bookmarked, ArticleUsefulnessDto usefulness) {
         return new ArticleDto(
                 article.getId(),
                 article.getTitle(),
@@ -27,7 +28,8 @@ public record ArticleDto(
                 article.getCategory() == null ? null : article.getCategory().getSlug(),
                 article.getCategory() == null ? null : article.getCategory().getName(),
                 article.getImageUrl(),
-                bookmarked
+                bookmarked,
+                usefulness
         );
     }
 }

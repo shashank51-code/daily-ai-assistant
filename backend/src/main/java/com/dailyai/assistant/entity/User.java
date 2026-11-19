@@ -18,6 +18,22 @@ public class User {
     @Column(nullable = false, unique = true, length = 200)
     private String email;
 
+    @Column(nullable = false, length = 500)
+    private String preferences = "";
+
+    @Column(name = "password_hash", length = 100)
+    private String passwordHash;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private Role role = Role.USER;
+
+    @Column(nullable = false)
+    private boolean enabled = true;
+
+    @Column(name = "password_changed_at")
+    private Instant passwordChangedAt;
+
     @Column(nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -51,6 +67,45 @@ public class User {
 
     public void setEmail(String email) {
         this.email = email;
+    }
+
+    public String getPreferences() { return preferences; }
+    public void setPreferences(String preferences) { this.preferences = preferences == null ? "" : preferences; }
+    public java.util.List<String> getPreferenceList() {
+        return preferences == null || preferences.isBlank() ? java.util.List.of()
+                : java.util.Arrays.stream(preferences.split(",")).filter(value -> !value.isBlank()).toList();
+    }
+
+    public String getPasswordHash() {
+        return passwordHash;
+    }
+
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
+    public Role getRole() {
+        return role;
+    }
+
+    public void setRole(Role role) {
+        this.role = role == null ? Role.USER : role;
+    }
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
+
+    public Instant getPasswordChangedAt() {
+        return passwordChangedAt;
+    }
+
+    public void setPasswordChangedAt(Instant passwordChangedAt) {
+        this.passwordChangedAt = passwordChangedAt;
     }
 
     public Instant getCreatedAt() {

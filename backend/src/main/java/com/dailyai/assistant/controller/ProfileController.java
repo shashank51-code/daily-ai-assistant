@@ -3,6 +3,7 @@ package com.dailyai.assistant.controller;
 import com.dailyai.assistant.dto.HistoryDto;
 import com.dailyai.assistant.dto.ProfileDto;
 import com.dailyai.assistant.dto.ProfileUpdateRequest;
+import com.dailyai.assistant.dto.ProfilePreferencesRequest;
 import com.dailyai.assistant.service.ProfileService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,6 +33,11 @@ public class ProfileController {
     @PutMapping
     public ProfileDto updateName(@Valid @RequestBody ProfileUpdateRequest request) {
         return profileService.updateName(request.name());
+    }
+
+    @PutMapping("/preferences")
+    public ProfileDto updatePreferences(@Valid @RequestBody ProfilePreferencesRequest request) {
+        return profileService.updatePreferences(request);
     }
 
     @GetMapping("/history")

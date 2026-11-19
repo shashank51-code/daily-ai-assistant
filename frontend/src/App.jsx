@@ -9,6 +9,9 @@ import TopicPage from './pages/TopicPage.jsx';
 import BookmarksPage from './pages/BookmarksPage.jsx';
 import ProfilePage from './pages/ProfilePage.jsx';
 import NotFoundPage from './pages/NotFoundPage.jsx';
+import LoginPage from './pages/LoginPage.jsx';
+import RegisterPage from './pages/RegisterPage.jsx';
+import { ProtectedRoute, PublicOnlyRoute } from './auth/ProtectedRoute.jsx';
 
 function initialTheme() {
   const stored = localStorage.getItem('dailyai-theme');
@@ -28,7 +31,15 @@ export default function App() {
 
   return (
     <Routes>
-      <Route element={<Layout theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />}>
+      <Route path="login" element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
+      <Route path="register" element={<PublicOnlyRoute><RegisterPage /></PublicOnlyRoute>} />
+      <Route
+        element={(
+          <ProtectedRoute>
+            <Layout theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
+          </ProtectedRoute>
+        )}
+      >
         <Route index element={<HomePage />} />
         <Route path="discover" element={<DiscoverPage />} />
         <Route path="news/:id" element={<ArticlePage />} />

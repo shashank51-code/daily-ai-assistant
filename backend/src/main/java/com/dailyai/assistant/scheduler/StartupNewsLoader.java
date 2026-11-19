@@ -3,7 +3,7 @@ package com.dailyai.assistant.scheduler;
 import com.dailyai.assistant.config.AppProperties;
 import com.dailyai.assistant.dto.RefreshResultDto;
 import com.dailyai.assistant.repository.ArticleRepository;
-import com.dailyai.assistant.service.NewsIngestionService;
+import com.dailyai.assistant.service.SchedulerRefreshService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -22,14 +22,14 @@ public class StartupNewsLoader implements ApplicationRunner {
 
     private final AppProperties properties;
     private final ArticleRepository articleRepository;
-    private final NewsIngestionService ingestionService;
+    private final SchedulerRefreshService refreshService;
 
     public StartupNewsLoader(AppProperties properties,
                              ArticleRepository articleRepository,
-                             NewsIngestionService ingestionService) {
+                             SchedulerRefreshService refreshService) {
         this.properties = properties;
         this.articleRepository = articleRepository;
-        this.ingestionService = ingestionService;
+        this.refreshService = refreshService;
     }
 
     @Override
@@ -43,9 +43,13 @@ public class StartupNewsLoader implements ApplicationRunner {
         }
         log.info("Article table is empty, fetching RSS feeds once at startup");
         try {
-            RefreshResultDto result = ingestionService.refreshAll();
-            log.info("Startup fetch finished: {} saved, {} duplicates, {} failed feeds",
-                    result.saved(), result.duplicates(), result.feedsFailed());
+            RefreshResultDto result = refreshService.runSynchronously("STARTUP");
+            if (result == null) {
+                log.info("Startup fetch skipped because another execution is already running");
+            } else {
+                log.info("Startup fetch finished: {} saved, {} duplicates, {} failed feeds",
+                        result.saved(), result.duplicates(), result.feedsFailed());
+            }
         } catch (Exception ex) {
             log.warn("Startup fetch failed: {}. The app keeps running and the scheduler will retry.", ex.getMessage());
         }
