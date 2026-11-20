@@ -3,6 +3,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { apiErrorMessage } from '../api/client.js';
 
+const registrationEnabled = import.meta.env.VITE_REGISTRATION_ENABLED !== 'false';
+
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -87,9 +89,11 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="muted small auth-switch">
-          New here? <Link className="text-link" to="/register">Create an account</Link>
-        </p>
+        {registrationEnabled && (
+          <p className="muted small auth-switch">
+            New here? <Link className="text-link" to="/register">Create an account</Link>
+          </p>
+        )}
         <p className="muted small">
           Your session is kept in an HttpOnly cookie. Your password is never stored in the browser.
         </p>

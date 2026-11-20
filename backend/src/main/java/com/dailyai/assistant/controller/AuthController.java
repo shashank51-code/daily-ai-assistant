@@ -6,6 +6,7 @@ import com.dailyai.assistant.dto.RegisterRequest;
 import com.dailyai.assistant.entity.User;
 import com.dailyai.assistant.exception.TooManyRequestsException;
 import com.dailyai.assistant.exception.UnauthorizedException;
+import com.dailyai.assistant.exception.ResourceNotFoundException;
 import com.dailyai.assistant.security.AppUserPrincipal;
 import com.dailyai.assistant.security.LoginAttemptService;
 import com.dailyai.assistant.service.AuthService;
@@ -52,6 +53,7 @@ public class AuthController {
     private final LoginAttemptService loginAttemptService;
     private final SessionAuthenticationStrategy sessionAuthenticationStrategy;
     private final boolean sessionCookieSecure;
+    private final boolean registrationEnabled;
     private final String sessionCookieSameSite;
     private final SecurityContextRepository securityContextRepository =
             new HttpSessionSecurityContextRepository();
@@ -62,6 +64,7 @@ public class AuthController {
                           LoginAttemptService loginAttemptService,
                           SessionAuthenticationStrategy sessionAuthenticationStrategy,
                           @Value("${server.servlet.session.cookie.secure:false}") boolean sessionCookieSecure,
+                          @Value("${app.auth.registration-enabled:true}") boolean registrationEnabled,
                           @Value("${server.servlet.session.cookie.same-site:lax}") String sessionCookieSameSite) {
         this.authService = authService;
         this.currentUserService = currentUserService;
@@ -69,6 +72,7 @@ public class AuthController {
         this.loginAttemptService = loginAttemptService;
         this.sessionAuthenticationStrategy = sessionAuthenticationStrategy;
         this.sessionCookieSecure = sessionCookieSecure;
+        this.registrationEnabled = registrationEnabled;
         this.sessionCookieSameSite = sessionCookieSameSite;
     }
 
@@ -82,6 +86,9 @@ public class AuthController {
     public ResponseEntity<AuthUserDto> register(@Valid @RequestBody RegisterRequest request,
                                                 HttpServletRequest httpRequest,
                                                 HttpServletResponse httpResponse) {
+        if (!registrationEnabled) {
+            throw new ResourceNotFoundException("Registration is disabled.");
+        }
         User user = authService.register(request);
         AppUserPrincipal principal = new AppUserPrincipal(user);
         Authentication authentication = UsernamePasswordAuthenticationToken.authenticated(

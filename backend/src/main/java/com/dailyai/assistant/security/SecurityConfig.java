@@ -78,6 +78,10 @@ public class SecurityConfig {
                         .sessionFixation(fixation -> fixation.changeSessionId()))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        // The browser UI is bundled into the same Spring Boot service in
+                        // the single-service deployment. Keep only static UI files public;
+                        // all application APIs retain their existing authentication rules.
+                        .requestMatchers("/", "/index.html", "/favicon.svg", "/assets/**").permitAll()
                         .requestMatchers("/error", "/api/auth/csrf", "/api/auth/login",
                                 "/api/auth/register", "/api/auth/logout",
                                 "/actuator/health", "/actuator/info").permitAll()

@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { apiErrorMessage } from '../api/client.js';
 
+const registrationEnabled = import.meta.env.VITE_REGISTRATION_ENABLED !== 'false';
+
 export default function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
@@ -13,6 +15,22 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  if (!registrationEnabled) {
+    return (
+      <div className="auth-shell">
+        <main className="auth-card">
+          <div className="auth-brand">
+            <span className="brand-mark" aria-hidden="true">AI</span>
+            <div><strong>Daily AI</strong><span className="brand-subtitle">Updates &amp; learning</span></div>
+          </div>
+          <h1>Personal application</h1>
+          <p className="muted">New account registration is disabled.</p>
+          <Link className="button auth-submit" to="/login">Sign in</Link>
+        </main>
+      </div>
+    );
+  }
 
   async function submit(event) {
     event.preventDefault();
