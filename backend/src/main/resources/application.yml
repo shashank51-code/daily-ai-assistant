@@ -20,7 +20,9 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
-    baseline-on-migrate: true
+    # Never baseline an existing schema: if flyway_schema_history is missing the run
+    # must fail instead of stamping V1 and replaying V2+ over populated tables.
+    baseline-on-migrate: false
   jackson:
     default-property-inclusion: non_null
     serialization:

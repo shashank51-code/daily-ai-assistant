@@ -16,7 +16,26 @@ responses (`spring.jackson.default-property-inclusion: non_null`), for example a
 ```
 
 `details` is a list of field validation messages for 400 responses. Status codes used:
-200, 201, 204, 400, 401, 404, 409, 500.
+200, 201, 204, 400, 401, 403, 404, 409, 429, 500.
+
+## Authentication and access
+
+Authentication uses an HttpOnly session cookie. Browser and Capacitor clients must send
+credentials (Axios `withCredentials: true`). Mutating cookie-authenticated requests require
+the `X-XSRF-TOKEN` header from `GET /api/auth/csrf`.
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/auth/csrf` | Token + header name for CSRF protection |
+| `POST /api/auth/register` | `{ name, email, password, confirmPassword }`; creates and signs in |
+| `POST /api/auth/login` | `{ email, password }`; generic 401 on failure, 429 when throttled |
+| `POST /api/auth/logout` | Invalidates the session and expires the cookie |
+| `GET /api/auth/me` | Current `{ id, name, email, role }`; 401 when signed out |
+
+Public read-only endpoints: `GET /api/news/**`, `/api/categories/**`, `/api/tools/**`.
+`GET /api/dashboard`, `/api/profile/**`, `/api/bookmarks/**` and `/api/learning/**` require a
+session and are scoped to its user. Admin endpoints require `ROLE_ADMIN` or a valid
+`X-Admin-Key` header and return 401/403 otherwise.
 
 ## News
 
@@ -48,8 +67,9 @@ Returns `PageResponse<ArticleDto>`:
 Returns up to 50 newest `ArticleDto` objects.
 
 ### `GET /api/news/{id}`
-Returns `ArticleDetailDto` including `explanation` and records the read in reading history.
-404 if missing.
+Returns `ArticleDetailDto` including `explanation`. For a signed-in reader it records the read
+in that user's reading history and personalizes usefulness using their interests. Anonymous
+readers get the public article without a history row. 404 if missing.
 
 ### `GET /api/news/category/{category}`
 Same as `/api/news` filtered to a slug. 404 for an unknown category.
@@ -148,8 +168,10 @@ and a `stats` object (`articlesToday`, `articlesTotal`, `completedTopics`, `tota
 | `POST /api/admin/articles/{id}/explain` | Regenerate an explanation with AI (400 if AI disabled) |
 | `GET /api/admin/status` | Feed count, running flag, last run, AI flag, key requirement |
 
-When `ADMIN_API_KEY` is configured, every `/api/admin/**` POST requires header
-`X-Admin-Key: <key>`; otherwise it returns 401.
+Every `/api/admin/**` endpoint requires `ROLE_ADMIN` (an authenticated admin account) or a
+valid `X-Admin-Key: <key>` header. A normal user receives 403; missing or wrong credentials
+receive 401. The header bypass is stateless and is exempt from CSRF; a cookie-authenticated
+admin still needs the CSRF token for POST requests.
 
 Refresh response:
 

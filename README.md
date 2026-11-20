@@ -28,12 +28,12 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for package layout and design decisions.
 
 | Layer    | Technology |
 |----------|------------|
-| Backend  | Java 17, Spring Boot 3.5, Spring Web, Spring Data JPA, Validation, Scheduler, Actuator |
+| Backend  | Java 17, Spring Boot 3.5, Spring Web, Spring Security, Spring Data JPA, Validation, Scheduler, Actuator |
 | Database | PostgreSQL 16, Flyway migrations |
 | RSS      | ROME 2.1 (`com.rometools:rome`) over the JDK HTTP client |
 | Frontend | React 18, JavaScript, custom CSS, Axios, React Router (hash routing) |
 | Build    | Maven, Vite, npm |
-| Android  | Capacitor 6 |
+| Android  | Capacitor 8 |
 
 ## Folder structure
 
@@ -142,6 +142,42 @@ docker compose up --build
 - Frontend: http://localhost:3000
 - API: http://localhost:8080
 
+## Authentication and multi-user isolation
+
+The app requires an account. Registration and login establish a server-side session in an
+HttpOnly cookie (`DAILYAI_SESSION`); no password or session token is stored in localStorage.
+Passwords are hashed with BCrypt and are never returned by the API or written to logs. CSRF
+tokens are required for cookie-authenticated mutations, and login attempts are throttled.
+
+Every personal record is queried by the authenticated user id: profile, interests, bookmarks,
+reading history, learning progress and daily-task progress. Article discovery remains readable
+without an account, but reading history is recorded only for the signed-in reader.
+
+Admin endpoints require `ROLE_ADMIN` or a valid `X-Admin-Key`; a normal user cannot refresh
+feeds. The existing single-profile account keeps its id and data, but has no password until an
+operator activates it with environment variables (never committed):
+
+```bash
+BOOTSTRAP_EMAIL=fresher@dailyai.local
+BOOTSTRAP_PASSWORD=<a strong password, set only in .env or the host environment>
+BOOTSTRAP_ROLE=ADMIN   # optional; USER is the default
+```
+
+The bootstrap runs once, never overwrites an existing password and never creates an account.
+Session settings:
+
+```bash
+SESSION_TIMEOUT=8h
+AUTH_COOKIE_SECURE=true        # required with HTTPS in production
+AUTH_COOKIE_SAME_SITE=none     # only for a cross-site Capacitor deployment over HTTPS
+```
+
+For browser deployments on the same site, keep `AUTH_COOKIE_SAME_SITE=lax`. Android release
+builds must use an HTTPS API with `AUTH_COOKIE_SECURE=true` and, because the WebView origin is
+`https://localhost`, `AUTH_COOKIE_SAME_SITE=none`. The app's `MainActivity` enables WebView
+cookie handling for that trusted API origin. Local HTTP emulator builds cannot use a
+`SameSite=None` cookie; use an HTTPS tunnel or same-origin deployment to test Android login.
+
 ## RSS configuration
 
 Feeds live in `backend/src/main/resources/application.yml` under `app.rss.feeds`. Each entry
@@ -151,10 +187,12 @@ has a name, URL and fallback category. The scheduler runs at minute 0 every thir
 Manual refresh:
 
 ```bash
-curl -X POST http://localhost:8080/api/admin/news/refresh
-# If ADMIN_API_KEY is set:
+# Admin key (works without a browser session):
 curl -X POST -H "X-Admin-Key: $ADMIN_API_KEY" http://localhost:8080/api/admin/news/refresh
 ```
+
+A signed-in account with `ROLE_ADMIN` can also refresh from the Discover screen. Normal users
+cannot call admin endpoints.
 
 Behaviour and limits:
 
@@ -175,10 +213,14 @@ with, the frontend or the Android APK.
 
 ```bash
 AI_ENABLED=true
-AI_BASE_URL=https://api.openai.com/v1   # or another compatible endpoint
-AI_API_KEY=sk-...                       # never commit this
-AI_MODEL=gpt-4o-mini
+AI_PROVIDER=groq                        # telemetry label only
+AI_BASE_URL=https://api.groq.com/openai/v1
+AI_API_KEY=...                          # never commit this
+AI_MODEL=openai/gpt-oss-20b
 ```
+
+Any OpenAI-compatible endpoint works (OpenAI, Groq, Gemini's compatibility layer, DeepSeek,
+OpenRouter). See `docs/AI_PROVIDER_COMPARISON.md` for prices and trade-offs.
 
 Optional resilience settings (defaults shown):
 
@@ -188,6 +230,8 @@ AI_MAX_ATTEMPTS=2          # total attempts for transient failures
 AI_RETRY_DELAY_MS=1000     # base delay, doubled per attempt (capped at 10s)
 AI_FAILURE_THRESHOLD=2     # consecutive failures before pausing
 AI_COOLDOWN_MS=300000      # pause length after the threshold is reached
+AI_MAX_CALLS_PER_DAY=100   # hard provider-request cap; 0 disables it
+AI_RETRY_AFTER_MINUTES=360 # do not retry a failed article inside this window
 ```
 
 Behaviour:
@@ -201,6 +245,14 @@ Behaviour:
 - `400`/`401`/`403` are treated as configuration errors and are not retried.
 - The prompt forbids invented facts and requires `"Not available in the provided text."` for
   unknown details. `generatedBy` in the API reports `AI` or `BASIC`.
+- AI text must include claim-level evidence. Each claim is stored only when its quote exists
+  in the publisher title or description; unsupported claims are dropped. The BASIC fallback
+  is used when no claim can be grounded.
+- Provider, model, input/output tokens and latency are stored per explanation and logged
+  without prompts or secrets. `AI_MAX_CALLS_PER_DAY` caps spending.
+- Personalisation stays deterministic: the article explanation is cached globally, while the
+  `LEARN_NOW` / `EXPLORE_LATER` / `SKIP` verdict is computed per authenticated user from their
+  own interests, so one user's preferences never leak into another user's page.
 - A response that is not usable JSON triggers one retry without `response_format`, then the
   offline explanation is kept.
 
@@ -218,33 +270,36 @@ provider (see `DEVELOPMENT_PROGRESS.md`).
 ## Android build (Capacitor)
 
 The Android project lives in `frontend/android` with application ID `com.dailyai.assistant`,
-app name `Daily AI Assistant`, minSdk 22 and targetSdk 34.
+app name `Daily AI Assistant`, minSdk 24 and targetSdk 36 (Capacitor 8).
 
 Prerequisites:
 
-- **JDK 17**. `npm run android:build` locates a JDK 17 automatically (checks `JAVA_HOME`, then
-  `~/.jdks/*`) and passes it to Gradle only for this build, so a newer machine-wide Java is
-  left untouched. Android Gradle Plugin 8.2 does not support newer JDKs.
-- **Android SDK** with Platform 34, Build-Tools 34.0.0 and platform-tools. The script looks in
+- **JDK 21** for Capacitor 7/8 (JDK 17 for Capacitor 6). `npm run android:build` selects the
+  JDK from the installed Capacitor major, checks `JAVA_HOME`, the project-local `.tools/jdk-*`,
+  then `~/.jdks/*`, and passes it to Gradle only for this build. It does not change machine-wide
+  Java settings. Capacitor 8's Android library compiles with Java source level 21.
+- **Android SDK** with Platform 36, Build-Tools 36.0.0 and platform-tools for Capacitor 8
+  (Platform 35 for Capacitor 7; Platform 34 for Capacitor 6). The script looks in
   `ANDROID_HOME`, `ANDROID_SDK_ROOT`, the project-local `.tools/android-sdk`, then the default
   per-user location. A project-local install used by this repository:
 
   ```bash
-  # from the project root; downloads only the three required packages
+  # from the project root; download the official Android command-line tools first
   mkdir -p .tools/android-sdk/cmdline-tools
   curl -L -o /tmp/cmdline-tools.zip \
-    https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip
+    https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip
   unzip -q /tmp/cmdline-tools.zip -d .tools/android-sdk/cmdline-tools
   mv .tools/android-sdk/cmdline-tools/cmdline-tools .tools/android-sdk/cmdline-tools/latest
   yes | .tools/android-sdk/cmdline-tools/latest/bin/sdkmanager.bat \
     --sdk_root="$(cygpath -m "$PWD/.tools/android-sdk")" --licenses
   yes | .tools/android-sdk/cmdline-tools/latest/bin/sdkmanager.bat \
     --sdk_root="$(cygpath -m "$PWD/.tools/android-sdk")" \
-    "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+    "platform-tools" "platforms;android-36" "build-tools;36.0.0"
   ```
 
   (Use `sdkmanager` without `.bat` on macOS/Linux.)
-- The Gradle wrapper downloads Gradle 8.2.1 on the first build (internet required).
+- Capacitor 8 uses Android Gradle Plugin 8.13.0 and the wrapper downloads Gradle 8.14.3
+  on the first build (internet required).
 
 The API URL is compiled into the web assets, so set it before building:
 
@@ -269,7 +324,7 @@ npm run android:build
 
 The script builds the web assets with `vite build --mode android`, runs `npx cap sync android`,
 writes the gitignored `android/local.properties` with the detected SDK, and calls
-`gradlew assembleDebug` with JDK 17 + the SDK on `PATH`.
+`gradlew assembleDebug` with the matching JDK + SDK on `PATH`.
 
 Install on a connected phone (USB debugging enabled):
 
@@ -293,8 +348,11 @@ Notes for physical devices:
 - Windows Firewall may need to allow inbound TCP 8080 for the phone to reach the backend.
 - Plain HTTP to a LAN IP requires cleartext traffic, enabled in
   `android/app/src/main/AndroidManifest.xml` (`android:usesCleartextTraffic="true"`).
-- Release builds should use HTTPS and the correct `CORS_ALLOWED_ORIGINS`; remove cleartext
-  traffic when the API is HTTPS-only.
+- Authentication on Android requires HTTPS with `AUTH_COOKIE_SECURE=true` and
+  `AUTH_COOKIE_SAME_SITE=none`; the WebView origin `https://localhost` is cross-site to the
+  API. `MainActivity` enables cookie handling for that trusted origin. A plain-HTTP emulator
+  build cannot send a `SameSite=None` cookie, so use an HTTPS tunnel or same-origin deployment
+  for authenticated device testing. Release builds should remove cleartext traffic.
 - The APK is not committed (`*.apk` is ignored). A debug APK was built in this repo at
   `frontend/android/app/build/outputs/apk/debug/app-debug.apk` (3,780,981 bytes, v1+v2 signed).
 
@@ -313,29 +371,35 @@ Full request/response reference: [API_DOCUMENTATION.md](API_DOCUMENTATION.md).
 | Profile    | `GET/PUT /api/profile`, `GET /api/profile/history` |
 | Admin      | `POST /api/admin/news/refresh`, `POST /api/admin/articles/{id}/explain`, `GET /api/admin/status` |
 
-There is no authentication: the app is designed as a single-profile personal app and all
-records belong to the default user seeded by Flyway. Do not expose the admin endpoints
-publicly without setting `ADMIN_API_KEY`.
+Public read-only endpoints: news, categories and AI tools. Registration, login, logout, CSRF
+and current-user endpoints live under `/api/auth`. Dashboard, profile, bookmarks and learning
+endpoints require a session and are always scoped to the authenticated owner. Admin endpoints
+require `ROLE_ADMIN` or a valid `X-Admin-Key` header.
 
 ## Testing
 
 ```bash
-cd backend && mvn test        # 30 unit/MVC/repository tests
+cd backend && mvn test        # auth, isolation, migration and existing regression tests
 cd frontend && npm run build  # production build check
 
 # Browser E2E (needs the backend + `npm run preview` running, and Chrome installed)
-cd frontend && npm run test:e2e   # 14 UI flows on a mobile viewport
+cd frontend && npm run test:auth  # registration, login, logout, persistence, isolation
+cd frontend && npm run test:e2e   # existing feature regression flows
 ```
 
-Backend tests cover RSS parsing (including malformed XML and missing dates), gzip-safe
-fetching is exercised live, duplicate detection, categorizer fallback, article listing and
-sorting, repository queries against H2, learning progress, bookmarks, validation, 404/401
-handling and the admin key check.
+Backend tests cover registration, duplicate/weak/invalid input, generic login failures, login
+throttling, logout, CSRF, session restoration, admin authorization, cross-user bookmark and
+progress attacks, reading-history ownership, Flyway migration on a preserved owner, RSS
+parsing, gzip fetching, duplicate detection, categorizer fallback, article listing and sorting,
+repository queries against H2, validation and existing 404 handling.
 
-The end-to-end suite (`frontend/scripts/e2e-smoke.mjs`) drives the installed Chrome through
-the real UI: navigation, dashboard data, bookmark add/remove, theme persistence, news search,
+The authentication suite (`frontend/scripts/auth-e2e.mjs`) registers two independent users and
+verifies redirect-to-login, generic credential errors, session persistence after reload, logout
+invalidation, bookmark ownership, and that the second user sees neither the first user's
+bookmarks nor profile. The regression suite (`frontend/scripts/e2e-smoke.mjs`) signs in first,
+then drives navigation, dashboard data, bookmark add/remove, theme persistence, news search,
 tool details, topic progress, daily task toggles, article explanations and profile updates.
-It also fails if the browser reports uncaught exceptions or console errors.
+Both fail on uncaught exceptions or unexpected console errors.
 
 ## Troubleshooting
 

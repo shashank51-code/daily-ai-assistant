@@ -41,6 +41,20 @@ class DeploymentConfigurationTest {
     }
 
     @Test
+    void flywayNeverBaselinesAnExistingSchema() throws IOException {
+        assertThat(applicationYaml().getProperty("spring.flyway.baseline-on-migrate"))
+                .isEqualTo("false");
+    }
+
+    @Test
+    void flywayChecksumValidationIsLeftAtTheSecureDefault() throws IOException {
+        // Flyway validates checksums on migrate unless explicitly disabled; an override
+        // here would silently let an edited V1-V11 through during the V12 validation.
+        assertThat(applicationYaml().getProperty("spring.flyway.validate-on-migrate"))
+                .isNull();
+    }
+
+    @Test
     void aiStaysDisabledByDefault() throws IOException {
         assertThat(applicationYaml().getProperty("app.ai.enabled")).isEqualTo("false");
     }
